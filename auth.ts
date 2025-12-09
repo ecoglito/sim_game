@@ -2,8 +2,9 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
-import type { Role } from "@prisma/client";
 import type { Adapter } from "next-auth/adapters";
+
+type Role = "ADMIN" | "CANDIDATE";
 
 declare module "next-auth" {
   interface Session {
@@ -23,6 +24,8 @@ declare module "next-auth" {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma) as Adapter,
+  session: { strategy: "jwt" }, // Use JWT sessions - no DB needed in middleware
+  trustHost: true,
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
@@ -30,15 +33,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user }) {
       if (!user.email) return false;
 
-      // Check if user has a valid invite or is admin
+      // Check if user is admin (auto-approve)
       const adminEmail = process.env.ADMIN_EMAIL;
-      const isAdmin = user.email === adminEmail;
-
-      if (isAdmin) {
-        // Auto-approve admin
+      if (user.email === adminEmail) {
         return true;
       }
 
@@ -53,23 +53,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           expiresAt: { gt: new Date() },
         },
         orderBy: {
-          // Prefer email-specific invites
           email: "desc",
         },
       });
 
       if (!invite) {
-        // No valid invite found
         return "/auth/no-invite";
       }
 
       return true;
     },
 
-    async session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id;
-        session.user.role = user.role;
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        // Fetch the latest role from DB
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { role: true },
+        });
+        token.role = dbUser?.role ?? "CANDIDATE";
+      }
+      return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user && token) {
+        session.user.id = token.id as string;
+        session.user.role = (token.role as Role) ?? "CANDIDATE";
       }
       return session;
     },
@@ -119,4 +130,3 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: "/auth/error",
   },
 });
-
