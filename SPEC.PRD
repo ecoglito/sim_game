@@ -1,0 +1,840 @@
+
+RD: Operation Black Knights
+
+Version: 1.0
+Owner: GTE (Enzo)
+Target: TypeScript + PixiJS game, used as an assessment for a Twitter/X growth ops lead
+
+1. Product Overview
+
+Operation Black Knights is a single player simulation that evaluates a candidate’s ability to:
+
+Operate a large fleet of alt accounts on X in a realistic way
+
+Orchestrate posting and engagement in real time under constraints
+
+Triage and reconstruct accounts
+
+Detect and adapt to algorithm changes without explicit guidance
+
+The game runs in a browser, uses PixiJS for the core UI, and outputs structured telemetry that can be reviewed after each session.
+
+Total play time target: 35 to 50 minutes for a complete run.
+
+2. Goals and Success Criteria
+2.1 Business goals
+
+Identify candidates who can fully own X posting and engagement, so the founder can focus on infra and strategy.
+
+Filter out candidates who need constant handholding, cannot reason under uncertainty, or do not understand CT culture deeply enough.
+
+2.2 Assessment goals
+
+The game must measure:
+
+Pattern realism and anti detection instincts
+
+Risk management with finite, valuable assets (accounts)
+
+Prioritization under time and bandwidth constraints
+
+Ability to detect regime shifts and design countermeasures
+
+Autonomy and initiative in exploring tools and options
+
+3. Scope
+3.1 In scope
+
+Three main playable chapters:
+
+Swarm Orchestration
+
+Account Triage and Reconstruction
+
+Algorithm Countermeasures
+
+Session level scoring and a radar style breakdown (values only, radar chart can be optional).
+
+Export of all decisions and telemetry as JSON.
+
+3.2 Out of scope (for V1)
+
+Real integration with Twitter/X API.
+
+Multiplayer or head to head mode.
+
+Long term player accounts or persistent progression.
+
+Mobile optimization beyond basic responsiveness.
+
+4. User Roles
+
+Candidate (Player)
+
+Plays the game once, no configuration required.
+
+Sees only the simulation UI and a final summary screen.
+
+Reviewer (Internal GTE)
+
+Loads telemetry JSON in an internal tool or inspects it manually.
+
+Compares candidates by metrics and event logs.
+
+For V1, there is no separate admin UI. Review is done out of band.
+
+5. High Level Game Structure
+5.1 Session flow
+
+Landing screen
+
+Short text briefing, controls explanation.
+
+“Start Simulation” button.
+
+Chapter I: Swarm Orchestration
+
+Duration: 10 to 15 real minutes.
+
+Produces metrics on engagement orchestration and suspicion.
+
+Chapter II: Account Triage and Reconstruction
+
+Duration: 10 to 15 real minutes.
+
+Produces metrics on triage quality and portfolio shape.
+
+Chapter III: Algorithm Countermeasures
+
+Duration: 10 to 15 real minutes.
+
+Includes a silent rule change after a baseline phase.
+
+Produces metrics on adaptation speed and effectiveness.
+
+Final summary screen
+
+High level scores by axis.
+
+Simple textual feedback.
+
+Button to “Export run as JSON”.
+
+5.2 Scenes and state
+
+Implement scenes as separate PixiJS containers or view classes:
+
+IntroScene
+
+Chapter1Scene
+
+Chapter2Scene
+
+Chapter3Scene
+
+SummaryScene
+
+A global GameState object tracks cross scene data, such as accounts and aggregate metrics.
+
+6. Data Model (TypeScript)
+
+These interfaces should be used or adapted directly in implementation.
+
+// Core account used in the sim, not tied to real X
+export type AccountRiskClass = "frontline" | "mid" | "background";
+export type AccountStatus = "active" | "flagged" | "banned" | "parked" | "discarded";
+
+export interface AccountPersonaTags {
+  defi: boolean;
+  nft: boolean;
+  gaming: boolean;
+  normie: boolean;
+  builder: boolean;
+  trader: boolean;
+  femaleAnon: boolean;
+  devAnon: boolean;
+}
+
+export interface AccountProfile {
+  displayName: string;
+  handle: string;
+  bio: string;
+  location: string;
+  language: string;
+  pfpType: "anon" | "realistic" | "brand" | "meme";
+  bannerType: "generic" | "crypto" | "landscape" | "none";
+  pinnedType: "thread" | "meme" | "valuePost" | "none";
+}
+
+export interface Account {
+  id: string;
+  ageDays: number;
+  followers: number;
+  region: "US" | "EU" | "Asia" | "LatAm" | "Other";
+  langPrimary: "en" | "es" | "pt" | "other";
+  riskClass: AccountRiskClass;
+  status: AccountStatus;
+  persona: AccountPersonaTags;
+  profile: AccountProfile;
+  historyFlags: string[]; // e.g. ["past_political_spam", "low_quality_followers"]
+  hiddenBanRiskScore: number; // 0-1 internal, not shown to player
+}
+
+export type TweetObjective = "reach" | "depth" | "reputationRepair" | "partnerSupport";
+
+export interface SimTweet {
+  id: string;
+  authorType: "GTE_main" | "affiliate" | "team_member";
+  topicTags: string[]; // e.g. ["defi", "governance", "drama"]
+  targetAudience: "ct_core" | "normie" | "builders" | "partners";
+  objective: TweetObjective;
+  baseOrganicReach: number; // baseline impressions
+  baseOrganicDepth: number; // baseline replies, bookmarks etc
+  liveMetrics: {
+    impressions: number;
+    depthScore: number;
+    timeSincePostMinutes: number;
+  };
+}
+
+export type EngagementActionType = "like" | "reply" | "retweet" | "quote" | "profileVisit";
+
+export type ReplyTone =
+  | "highSignalCT"
+  | "farming"
+  | "normieQuestion"
+  | "subtleShill"
+  | "technicalCritique";
+
+export interface EngagementAction {
+  id: string;
+  inGameMinute: number;
+  accountId: string;
+  tweetId: string;
+  type: EngagementActionType;
+  replyTone?: ReplyTone;
+  // Computed consequences (not shown to player)
+  suspicionDelta: number;
+  reachDelta: number;
+  depthDelta: number;
+}
+
+export interface TriageDecision {
+  accountId: string;
+  action: "keep" | "park" | "discard";
+  newProfile?: Partial<AccountProfile>;
+  newPersona?: Partial<AccountPersonaTags>;
+  newRiskClass?: AccountRiskClass;
+  triageTimeSpentMinutes: number;
+  detectedFlags: string[]; // what the player clicked / acknowledged
+}
+
+export interface AlgorithmRuleSet {
+  id: "baseline" | "post_change";
+  // approximate weights for internal scoring
+  weightClusterSynchrony: number;
+  weightRepeatReplyTone: number;
+  weightGeoLanguageMismatch: number;
+  weightHighValueAccountOveruse: number;
+}
+
+export interface ChapterMetrics {
+  chapterId: "chapter1" | "chapter2" | "chapter3";
+  startTime: number;
+  endTime: number;
+  // Chapter specific metrics defined later
+  data: Record<string, number>;
+}
+
+export interface GameRun {
+  runId: string;
+  startedAt: number;
+  endedAt: number;
+  accounts: Account[];
+  tweets: SimTweet[];
+  engagements: EngagementAction[];
+  triageDecisions: TriageDecision[];
+  ruleSets: AlgorithmRuleSet[];
+  chapterMetrics: ChapterMetrics[];
+  derivedScores: {
+    patternRealism: number;
+    riskDiscipline: number;
+    strategicSensitivity: number;
+    operationalPrioritization: number;
+    autonomySignals: number;
+  };
+}
+
+7. Chapter Design Details
+7.1 Shared UI components
+
+Across chapters, reuse:
+
+Top bar
+
+Current chapter name.
+
+Global session timer.
+
+Navigation between sub panels.
+
+Right side status panel
+
+Suspicion Meter (0 to 100).
+
+Key aggregate metrics (impressions, bans, etc).
+
+Bottom status bar
+
+Contextual hints.
+
+Current in game time.
+
+All UI interactions must be mouse first, keyboard optional.
+
+7.2 Chapter I: Swarm Orchestration
+
+Objective
+
+Simulate live engagement orchestration in the 2 to 3 hour window after a set of important posts.
+
+Duration
+
+Target 10 to 15 real minutes, mapped to for example 180 in game minutes (1 real second equals 0.2 in game minutes is a reasonable starting point).
+
+7.2.1 UI layout
+
+Top region: Tweet timeline
+
+Horizontal strip of cards representing GTE and affiliate tweets.
+
+Each card shows:
+
+Author type icon.
+
+Time since posted (in game).
+
+Current impressions and depth.
+
+Small icon representing objective (reach, depth, repair, partner).
+
+Clicking a card opens a detail pop up with:
+
+Text stub (lorem style, does not need to be real).
+
+Topic tags.
+
+Desired objective description.
+
+A recommended window for strongest impact (for example first 40 in game minutes).
+
+Center panel: Engagement planner
+
+When a tweet is selected, a panel appears showing:
+
+Available engagement actions per account per minute.
+
+Predefined templates for engagement patterns:
+
+“Early burst”, “Staggered wave”, “Slow burn”.
+
+A queue or list of scheduled engagement actions, editable.
+
+Bottom region: Account grid
+
+Grid or table with 50 to 100 accounts (from Chapter II decisions if available, else pre generated).
+
+Columns:
+
+Avatar icon and displayName.
+
+Followers.
+
+Persona tags (compact icons).
+
+Risk class.
+
+Status (active, flagged, etc).
+
+Player can multi select accounts and assign actions to the selected tweet.
+
+Right side: Suspicion Meter and indicators
+
+Suspicion Meter bar.
+
+List of last 5 “system notices”:
+
+“Cluster A engaged too fast on Tweet T3.”
+
+“Two high risk accounts were used repeatedly.”
+
+7.2.2 Mechanics and rules
+
+Time is discrete in game minutes, advanced on a fixed real time tick.
+
+Each in game minute, the system:
+
+Processes all scheduled EngagementAction objects for that minute.
+
+Updates SimTweet.liveMetrics with reach and depth deltas.
+
+Computes suspicionDelta per action and increases global Suspicion Meter.
+
+If Suspicion Meter crosses thresholds, triggers:
+
+Account flags or bans.
+
+Soft penalties on reach for certain tweets.
+
+Suspicion contribution should depend on:
+
+Synchrony: many accounts engaging the same tweet within a narrow window.
+
+Repetition: same accounts repeatedly engaging the same author.
+
+Persona mismatch: for example a “normie” tagged persona replying with high signal CT critique.
+
+Overuse of high value accounts (frontline) in a short window.
+
+Player constraints:
+
+Maximum number of engagement actions per in game minute (global pacing cap).
+
+Maximum actions per account per in game hour (per account pacing).
+
+Hard limit on how many tweets they can actively manage at once (UI constraint).
+
+7.2.3 Chapter I metrics
+
+Record at least:
+
+Total engagement actions.
+
+Average Suspicion Meter level over time.
+
+Number of bans and flags.
+
+Weighted reach score: sum over tweets of reachDelta multiplied by objective weight.
+
+Weighted depth score.
+
+A pattern realism score, for example:
+
+Penalise same account appearing on more than X percent of posts.
+
+Penalise extremely narrow engagement windows.
+
+Implementation can compute these every N ticks and store in ChapterMetrics.data.
+
+7.3 Chapter II: Account Triage and Reconstruction
+
+Objective
+
+Simulate the process of receiving raw accounts from suppliers, triaging them, and rebuilding them into usable personas under a strict time budget.
+
+Duration
+
+Target 10 to 15 real minutes, representing 60 in game minutes of “profiling time.”
+
+7.3.1 UI layout
+
+Left panel: Incoming account queue
+
+Vertical list of 25 to 40 account cards.
+
+Each card shows:
+
+Current handle, followers, age.
+
+Short description of recent topics.
+
+High level region and language.
+
+Clicking a card opens the Account detail editor.
+
+Center panel: Account detail editor
+
+For the selected account, show:
+
+“History” area with:
+
+Several recent pseudo tweets with tags, some risky (politics, scams).
+
+A list of potential flags, blurred until user hovers or clicks.
+
+Profile editor:
+
+Fields for displayName, handle, bio, location, language.
+
+Drop down or buttons for pfp type, banner type, pinned type.
+
+Toggle for persona tags (defi, nft, normie, etc).
+
+Controls for:
+
+Action: keep, park, discard.
+
+Assign riskClass.
+
+Right panel: Briefing and time budget
+
+Text summary of upcoming narrative needs, such as:
+
+“Expect heavy defi governance content this week.”
+
+“Need at least some normie accounts for partner posts.”
+
+A large “Time Remaining” indicator, both numeric and bar.
+
+A count of how many accounts have been triaged as keep, park, discard.
+
+7.3.2 Mechanics and rules
+
+The player starts with a fixed in game time budget, for example 60 minutes.
+
+Each action and interaction consumes time, for example:
+
+Opening an account detail costs 1 in game minute.
+
+Changing a profile field costs 0.5 in game minutes.
+
+Toggling persona tags costs 0.5 in game minutes.
+
+Reading or revealing history flags costs 0.5 to 1 minute.
+
+Time reduction is shown live and stops the chapter automatically when it reaches zero.
+
+Certain accounts contain “landmine” flags in historyFlags, such as:
+
+"past_political_spam"
+
+"past_crypto_scam"
+
+"bottish_follower_pattern"
+
+If the player keeps accounts with severe flags without adjusting riskClass or parking them, internal hiddenBanRiskScore is elevated.
+
+The game also tracks portfolio shape:
+
+Counts of persona types.
+
+Distribution of riskClasses.
+
+Alignment with upcoming needs (for example enough defi and builder personas).
+
+7.3.3 Chapter II metrics
+
+Record:
+
+Number of accounts kept, parked, discarded.
+
+Portfolio diversity index:
+
+How evenly persona tags are distributed.
+
+How many distinct persona combinations exist.
+
+Triage efficiency:
+
+Average time spent per account.
+
+Number of accounts never opened.
+
+Landmine handling:
+
+Fraction of severe historyFlags correctly detected and either parked or given conservative riskClass.
+
+Resulting average hiddenBanRiskScore for kept accounts.
+
+These metrics will later influence how many accounts are at risk of ban in Chapters I and III.
+
+7.4 Chapter III: Algorithm Countermeasures
+
+Objective
+
+Simulate a sudden change in detection heuristics and evaluate whether the player can infer the change and adapt strategies.
+
+Duration
+
+Target 10 to 15 minutes, split into:
+
+Baseline phase: 4 to 5 minutes.
+
+Post change phase: 6 to 10 minutes, with at least 2 experiment iterations.
+
+7.4.1 UI layout
+
+This chapter reuses much of Chapter I layout, with additional analytics controls.
+
+Top region: tweet timeline as in Chapter I.
+
+Bottom region: account grid as in Chapter I.
+
+Right panel extended to have tabs:
+
+“Status”: Suspicion Meter, notices.
+
+“Analytics”: simple charts or tables.
+
+Analytics tab can show:
+
+Bans or flags as a function of:
+
+accountAge bucket,
+
+followers bucket,
+
+persona type,
+
+action frequency.
+
+Implementation can be minimal, even text lists and bar approximations.
+
+Top right: Countermeasure panel
+
+Simple set of knobs:
+
+Global max actions per account per hour (slider).
+
+Global minimum delay between actions by the same account (slider).
+
+Target ratio of likes to replies to retweets (sliders or drop downs).
+
+Number of “silent browsing” actions you want the system to inject automatically.
+
+A button “Apply new pattern” that freezes these defaults for the next simulation block.
+
+7.4.2 Mechanics and rules
+
+An AlgorithmRuleSet controls suspicion computation.
+
+Phase 1:
+
+Use ruleSets.baseline.
+
+Candidate plays with initial defaults, warm up only.
+
+Game records baseline performance metrics.
+
+At a predetermined in game time (for example after 20 in game minutes):
+
+Switch to ruleSets.post_change.
+
+Rule changes may include:
+
+Higher weight on cluster synchrony.
+
+Extra penalty for repeated use of certain reply tones by similar personas.
+
+Stricter penalty on geo language mismatches.
+
+Extra penalty on overuse of frontline accounts.
+
+New suspicious behavior is not explained to the player. They only see:
+
+Increased Suspicion Meter, more flags, more bans.
+
+Drops in reach for certain patterns.
+
+Summary analytics in the Analytics tab.
+
+The player has a limited number of countermeasure updates, for example 3. Each update:
+
+Lets them change global pattern parameters via the Countermeasure panel.
+
+Applies those parameters for the next N in game minutes.
+
+7.4.3 Chapter III metrics
+
+Record:
+
+Baseline vs post change:
+
+Suspicion per engagement.
+
+Bans per 100 engagements.
+
+Reach per tweet.
+
+Time to first countermeasure change after rule switch.
+
+Improvement in metrics after changes:
+
+Compare last N in game minutes of baseline versus last N minutes post change.
+
+Diversity of countermeasures:
+
+Did the player adjust multiple dimensions or just one.
+
+Use of Analytics tab:
+
+Number of times analytics was opened and duration.
+
+8. Scoring and Derived Traits
+
+At the end of the run, compute values between 0 and 100 for each axis. Suggested mapping:
+
+Pattern realism
+
+Base from Chapter I and III:
+
+Penalise over concentrated account usage.
+
+Penalise extremely synchronized waves in context of the rules.
+
+Higher score if:
+
+Chosen patterns resemble noisy, staggered human behavior.
+
+Risk discipline
+
+Base from:
+
+Chapter II landmine handling and portfolio risk profile.
+
+Number of frontline accounts burned in Chapters I and III.
+
+Penalise:
+
+High bans among frontline riskClass accounts.
+
+Keeping many severe landmines as active.
+
+Strategic sensitivity
+
+Base from Chapter III adaptation:
+
+Time to react after algorithm change.
+
+Improvement in key metrics after countermeasures.
+
+Also consider if the player notices any anomalies in Chapter I if you choose to inject small early hints.
+
+Operational prioritization
+
+Base from both Chapters I and II:
+
+Whether high impact tweets received more thoughtful attention.
+
+Use of time on most important accounts in triage.
+
+Engagement bandwidth allocated to priority posts rather than evenly sprayed.
+
+Autonomy signals
+
+Base from:
+
+Use of optional tools and tabs (history flags, analytics).
+
+Number of emergent patterns not explicitly suggested (for example, player invents a clear hierarchy of account use).
+
+Penalise:
+
+Overly cautious non engagement that avoids using the system at all.
+
+Store these in GameRun.derivedScores.
+
+9. Final Summary Screen
+
+The summary screen should display:
+
+A textual headline per axis, for example:
+
+“Pattern realism: 78
+You staggered engagements reasonably well but overused a few accounts.”
+
+Numeric values 0 to 100 for each derived score.
+
+A small table with core chapter metrics:
+
+Chapter I: engagement count, bans, reach, average suspicion.
+
+Chapter II: accounts kept, avg risk, diversity index.
+
+Chapter III: baseline vs post change performance.
+
+Button: “Export run as JSON”
+
+Downloads GameRun as a JSON file, for internal review.
+
+10. Technical Implementation Notes
+10.1 Stack
+
+TypeScript.
+
+PixiJS 6 or 7 for rendering.
+
+Build tool: Vite or Webpack.
+
+State management: simple custom store or Redux style if preferred.
+
+10.2 Suggested project structure
+src/
+  main.ts
+  core/
+    Game.ts
+    GameState.ts
+    types.ts        // interfaces from this PRD
+    metrics.ts      // scoring functions
+    telemetry.ts    // logging helpers
+  scenes/
+    IntroScene.ts
+    Chapter1Scene.ts
+    Chapter2Scene.ts
+    Chapter3Scene.ts
+    SummaryScene.ts
+  systems/
+    chapter1Logic.ts
+    chapter2Logic.ts
+    chapter3Logic.ts
+    suspicionEngine.ts
+    algorithmRules.ts
+  ui/
+    components/
+      TweetCard.ts
+      AccountCard.ts
+      SuspicionMeter.ts
+      TimeBudgetBar.ts
+      AnalyticsPanel.ts
+      CountermeasurePanel.ts
+    layout/
+      Chapter1Layout.ts
+      Chapter2Layout.ts
+      Chapter3Layout.ts
+  assets/
+    fonts/
+    sprites/
+    icons/
+
+10.3 Simulation tick
+
+Use a central loop that advances in game time and calls per chapter logic:
+
+const TICK_MS = 500; // 0.5 second per tick
+
+function gameLoop() {
+  const now = performance.now();
+  // call activeScene.update(deltaTime, gameState);
+  requestAnimationFrame(gameLoop);
+}
+
+
+Each chapter implements update(deltaMs: number, state: GameState) where:
+
+It converts deltaMs into in game minutes.
+
+Processes scheduled actions, triggers rule evaluation, updates metrics.
+
+10.4 Telemetry
+
+Every user action that affects state should write an event object into a log, for example:
+
+interface TelemetryEvent {
+  t: number; // timestamp
+  chapterId: string;
+  type: string; // "engagement_scheduled", "triage_decision", "rule_change"
+  payload: any;
+}
+
+
+These events are then folded into GameRun on summary.
