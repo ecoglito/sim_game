@@ -1729,8 +1729,6 @@ export class Chapter1Scene implements IScene {
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (event.code === 'Escape') {
       this.clearSelection();
-    } else if (event.code === 'KeyN') {
-      this.state.advanceToNextScene();
     }
   };
 

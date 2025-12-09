@@ -6,11 +6,11 @@ import {
   computeChapter1Metrics,
   computeChapter2Metrics,
   computeChapter3Metrics,
-  generateScoreFeedback,
 } from '../core/metrics';
 
 /**
- * SummaryScene - Classified evaluation report with Illuminati aesthetic
+ * SummaryScene - Submission complete screen (NO SCORES SHOWN TO PLAYER)
+ * Scores are computed and submitted but only visible to admins.
  */
 export class SummaryScene implements IScene {
   public readonly container: Container;
@@ -18,8 +18,10 @@ export class SummaryScene implements IScene {
   private readonly state: GameState;
   private animationFrame: number = 0;
   private scanlineGraphics: Graphics | null = null;
+  private isSubmitting: boolean = false;
+  private isSubmitted: boolean = false;
 
-  // Color palette - Illuminati/CIA theme
+  // Color palette
   private readonly colors = {
     bgDark: 0x0a0a0a,
     bgPanel: 0x111111,
@@ -46,7 +48,7 @@ export class SummaryScene implements IScene {
     this.state.endRun();
     this.computeFinalScores();
     this.buildUI();
-    window.addEventListener('keydown', this.handleKeyDown);
+    this.submitResults();
   }
 
   private computeFinalScores(): void {
@@ -57,6 +59,47 @@ export class SummaryScene implements IScene {
       computeChapter2Metrics(run),
       computeChapter3Metrics(run),
     ];
+  }
+
+  private async submitResults(): Promise<void> {
+    if (this.isSubmitting || this.isSubmitted) return;
+    
+    this.isSubmitting = true;
+    this.updateSubmitStatus('Submitting results...');
+
+    try {
+      const gameRun = this.state.exportGameRun();
+      gameRun.derivedScores = this.state.derivedScores;
+      gameRun.chapterMetrics = this.state.chapterMetrics;
+
+      const response = await fetch('/api/game/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(gameRun),
+      });
+
+      if (response.ok) {
+        this.isSubmitted = true;
+        this.updateSubmitStatus('Results submitted successfully!');
+      } else {
+        this.updateSubmitStatus('Submission complete.');
+      }
+    } catch (error) {
+      console.error('Failed to submit results:', error);
+      this.updateSubmitStatus('Submission complete.');
+    } finally {
+      this.isSubmitting = false;
+    }
+  }
+
+  private updateSubmitStatus(message: string): void {
+    const statusText = this.container.children.find(c => c.name === 'submitStatus') as Text;
+    if (statusText) {
+      statusText.text = message;
+      if (message.includes('successfully')) {
+        statusText.style.fill = this.colors.green;
+      }
+    }
   }
 
   private buildUI(): void {
@@ -74,23 +117,11 @@ export class SummaryScene implements IScene {
     // All-seeing eye symbol
     this.drawAllSeeingEye(width);
 
-    // Document title
-    this.drawDocumentTitle(width);
-
-    // Run identifier (styled as document reference)
-    this.drawDocumentReference(width);
-
-    // Main content - evaluation scores
-    this.drawEvaluationPanel(width, height);
-
-    // Chapter metrics panel
-    this.drawMetricsPanel(width, height);
+    // Thank you message
+    this.drawThankYouMessage(width, height);
 
     // Classification footer
     this.drawClassificationFooter(width, height);
-
-    // Action buttons
-    this.drawActionButtons(width, height);
 
     // Scanline overlay effect
     this.drawScanlines(width, height);
@@ -132,7 +163,7 @@ export class SummaryScene implements IScene {
   private drawGeometricElements(width: number, height: number): void {
     const geo = new Graphics();
     
-    // Corner triangles (Illuminati symbolism)
+    // Corner triangles
     geo.lineStyle(1, this.colors.gold, 0.15);
     
     // Top-left triangle
@@ -220,92 +251,122 @@ export class SummaryScene implements IScene {
 
   private drawAllSeeingEye(width: number): void {
     const eyeContainer = new Container();
-    eyeContainer.position.set(width / 2, 90);
+    eyeContainer.position.set(width / 2, 120);
 
     const eye = new Graphics();
     
     // Outer pyramid/triangle
     eye.lineStyle(2, this.colors.gold, 0.8);
-    eye.moveTo(0, -40);
-    eye.lineTo(-35, 20);
-    eye.lineTo(35, 20);
-    eye.lineTo(0, -40);
+    eye.moveTo(0, -50);
+    eye.lineTo(-45, 30);
+    eye.lineTo(45, 30);
+    eye.lineTo(0, -50);
 
     // Inner triangle
     eye.lineStyle(1, this.colors.gold, 0.4);
-    eye.moveTo(0, -25);
-    eye.lineTo(-20, 10);
-    eye.lineTo(20, 10);
-    eye.lineTo(0, -25);
+    eye.moveTo(0, -30);
+    eye.lineTo(-25, 15);
+    eye.lineTo(25, 15);
+    eye.lineTo(0, -30);
 
     // Eye circle
     eye.lineStyle(2, this.colors.gold, 1);
-    eye.drawCircle(0, -5, 12);
+    eye.drawCircle(0, -5, 15);
 
     // Pupil
     eye.beginFill(this.colors.gold);
-    eye.drawCircle(0, -5, 5);
+    eye.drawCircle(0, -5, 6);
     eye.endFill();
 
     // Radiating lines
     eye.lineStyle(1, this.colors.gold, 0.3);
     for (let i = 0; i < 12; i++) {
       const angle = (i * 30 * Math.PI) / 180;
-      eye.moveTo(Math.cos(angle) * 45, -5 + Math.sin(angle) * 45);
-      eye.lineTo(Math.cos(angle) * 60, -5 + Math.sin(angle) * 60);
+      eye.moveTo(Math.cos(angle) * 55, -5 + Math.sin(angle) * 55);
+      eye.lineTo(Math.cos(angle) * 75, -5 + Math.sin(angle) * 75);
     }
 
     eyeContainer.addChild(eye);
     this.container.addChild(eyeContainer);
   }
 
-  private drawDocumentTitle(width: number): void {
+  private drawThankYouMessage(width: number, height: number): void {
+    const centerY = height / 2;
+
     // Main title
     const titleStyle = new TextStyle({
       fontFamily: 'Courier New, monospace',
-      fontSize: 28,
+      fontSize: 36,
       fontWeight: 'bold',
       fill: this.colors.gold,
       letterSpacing: 6,
     });
 
-    const title = new Text('◆ OPERATIONAL ASSESSMENT ◆', titleStyle);
+    const title = new Text('SIMULATION COMPLETE', titleStyle);
     title.anchor.set(0.5, 0);
-    title.position.set(width / 2, 140);
+    title.position.set(width / 2, centerY - 80);
     this.container.addChild(title);
 
-    // Subtitle
-    const subtitleStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 12,
-      fill: this.colors.grayLight,
-      letterSpacing: 4,
-    });
-
-    const subtitle = new Text('SIMULATION TERMINATION REPORT', subtitleStyle);
-    subtitle.anchor.set(0.5, 0);
-    subtitle.position.set(width / 2, 175);
-    this.container.addChild(subtitle);
-
-    // Decorative line under title
+    // Decorative line
     const line = new Graphics();
-    line.lineStyle(1, this.colors.gold, 0.5);
-    line.moveTo(width / 2 - 200, 195);
-    line.lineTo(width / 2 - 50, 195);
-    line.moveTo(width / 2 + 50, 195);
-    line.lineTo(width / 2 + 200, 195);
+    line.lineStyle(2, this.colors.gold, 0.5);
+    line.moveTo(width / 2 - 200, centerY - 35);
+    line.lineTo(width / 2 - 50, centerY - 35);
+    line.moveTo(width / 2 + 50, centerY - 35);
+    line.lineTo(width / 2 + 200, centerY - 35);
     
     // Diamond in center
     line.lineStyle(1, this.colors.gold, 0.8);
-    line.moveTo(width / 2, 190);
-    line.lineTo(width / 2 + 8, 195);
-    line.lineTo(width / 2, 200);
-    line.lineTo(width / 2 - 8, 195);
-    line.lineTo(width / 2, 190);
+    line.moveTo(width / 2, centerY - 45);
+    line.lineTo(width / 2 + 10, centerY - 35);
+    line.lineTo(width / 2, centerY - 25);
+    line.lineTo(width / 2 - 10, centerY - 35);
+    line.lineTo(width / 2, centerY - 45);
     this.container.addChild(line);
-  }
 
-  private drawDocumentReference(width: number): void {
+    // Thank you message
+    const messageStyle = new TextStyle({
+      fontFamily: 'Courier New, monospace',
+      fontSize: 18,
+      fill: this.colors.grayLight,
+      letterSpacing: 2,
+      align: 'center',
+    });
+
+    const message = new Text('Thank you for completing the assessment.', messageStyle);
+    message.anchor.set(0.5, 0);
+    message.position.set(width / 2, centerY);
+    this.container.addChild(message);
+
+    // Sub-message
+    const subMessageStyle = new TextStyle({
+      fontFamily: 'Courier New, monospace',
+      fontSize: 14,
+      fill: this.colors.gray,
+      letterSpacing: 1,
+      align: 'center',
+    });
+
+    const subMessage = new Text('Your results have been recorded and will be reviewed.', subMessageStyle);
+    subMessage.anchor.set(0.5, 0);
+    subMessage.position.set(width / 2, centerY + 40);
+    this.container.addChild(subMessage);
+
+    // Status text (for submission updates)
+    const statusStyle = new TextStyle({
+      fontFamily: 'Courier New, monospace',
+      fontSize: 12,
+      fill: this.colors.amber,
+      letterSpacing: 1,
+    });
+
+    const statusText = new Text('Submitting results...', statusStyle);
+    statusText.anchor.set(0.5, 0);
+    statusText.position.set(width / 2, centerY + 80);
+    statusText.name = 'submitStatus';
+    this.container.addChild(statusText);
+
+    // Document reference
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
     
@@ -316,423 +377,16 @@ export class SummaryScene implements IScene {
       letterSpacing: 1,
     });
 
-    // Left reference
-    const leftRef = new Text(`DOC REF: OBK-${dateStr}-${this.state.runId.slice(0, 8).toUpperCase()}`, refStyle);
-    leftRef.position.set(50, 210);
-    this.container.addChild(leftRef);
+    const refText = new Text(`DOC REF: OBK-${dateStr}-${this.state.runId.slice(0, 8).toUpperCase()}`, refStyle);
+    refText.anchor.set(0.5, 0);
+    refText.position.set(width / 2, centerY + 120);
+    this.container.addChild(refText);
 
-    // Right reference
-    const rightRef = new Text(`CLASSIFICATION: TS/SCI/SAP`, refStyle);
-    rightRef.anchor.set(1, 0);
-    rightRef.position.set(width - 50, 210);
-    this.container.addChild(rightRef);
-  }
-
-  private drawEvaluationPanel(width: number, height: number): void {
-    const panelX = 50;
-    const panelY = 240;
-    const panelWidth = width / 2 - 70;
-    const panelHeight = height - 380;
-
-    // Panel background
+    // Panel around message
     const panel = new Graphics();
-    panel.beginFill(this.colors.bgPanel, 0.7);
     panel.lineStyle(1, this.colors.gold, 0.3);
-    panel.drawRect(panelX, panelY, panelWidth, panelHeight);
-    panel.endFill();
-
-    // Corner decorations
-    this.drawCornerBrackets(panel, panelX, panelY, panelWidth, panelHeight);
-
+    panel.drawRoundedRect(width / 2 - 300, centerY - 100, 600, 250, 8);
     this.container.addChild(panel);
-
-    // Section header
-    const headerStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 14,
-      fontWeight: 'bold',
-      fill: this.colors.gold,
-      letterSpacing: 3,
-    });
-
-    const header = new Text('▶ PERFORMANCE EVALUATION', headerStyle);
-    header.position.set(panelX + 15, panelY + 15);
-    this.container.addChild(header);
-
-    // Overall score - big centered display
-    const scores = this.state.derivedScores;
-    const overallScore = Math.round(
-      (scores.patternRealism + scores.riskDiscipline + scores.strategicSensitivity + 
-       scores.operationalPrioritization + scores.autonomySignals) / 5
-    );
-
-    this.drawOverallScore(panelX + panelWidth / 2, panelY + 85, overallScore);
-
-    // Individual scores
-    const scoreLabels: [string, keyof typeof scores, string][] = [
-      ['PATTERN REALISM', 'patternRealism', 'I'],
-      ['RISK DISCIPLINE', 'riskDiscipline', 'II'],
-      ['STRATEGIC SENSITIVITY', 'strategicSensitivity', 'III'],
-      ['OPERATIONAL PRIORITY', 'operationalPrioritization', 'IV'],
-      ['AUTONOMY SIGNALS', 'autonomySignals', 'V'],
-    ];
-
-    const feedback = generateScoreFeedback(scores);
-    let yPos = panelY + 160;
-
-    scoreLabels.forEach(([label, key, numeral]) => {
-      this.drawScoreRow(panelX + 15, yPos, label, scores[key], feedback[key], panelWidth - 30, numeral);
-      yPos += 70;
-    });
-  }
-
-  private drawOverallScore(x: number, y: number, score: number): void {
-    const scoreContainer = new Container();
-    scoreContainer.position.set(x, y);
-
-    // Hexagonal background
-    const hex = new Graphics();
-    hex.lineStyle(2, this.colors.gold, 0.8);
-    hex.beginFill(this.colors.bgDark, 0.9);
-    
-    const size = 45;
-    hex.moveTo(0, -size);
-    for (let i = 1; i <= 6; i++) {
-      const angle = (i * 60 - 90) * Math.PI / 180;
-      hex.lineTo(Math.cos(angle) * size, Math.sin(angle) * size);
-    }
-    hex.endFill();
-
-    // Inner hexagon
-    hex.lineStyle(1, this.colors.gold, 0.4);
-    const innerSize = 35;
-    hex.moveTo(0, -innerSize);
-    for (let i = 1; i <= 6; i++) {
-      const angle = (i * 60 - 90) * Math.PI / 180;
-      hex.lineTo(Math.cos(angle) * innerSize, Math.sin(angle) * innerSize);
-    }
-
-    scoreContainer.addChild(hex);
-
-    // Score value
-    const scoreStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 32,
-      fontWeight: 'bold',
-      fill: this.getScoreColor(score),
-    });
-
-    const scoreText = new Text(score.toString(), scoreStyle);
-    scoreText.anchor.set(0.5);
-    scoreContainer.addChild(scoreText);
-
-    // Label
-    const labelStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 9,
-      fill: this.colors.grayLight,
-      letterSpacing: 2,
-    });
-
-    const label = new Text('COMPOSITE RATING', labelStyle);
-    label.anchor.set(0.5, 0);
-    label.position.set(0, 55);
-    scoreContainer.addChild(label);
-
-    // Classification level based on score
-    const classLevel = score >= 80 ? 'EXCEPTIONAL' : 
-                       score >= 60 ? 'SATISFACTORY' : 
-                       score >= 40 ? 'MARGINAL' : 'DEFICIENT';
-    
-    const classStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 10,
-      fontWeight: 'bold',
-      fill: this.getScoreColor(score),
-      letterSpacing: 1,
-    });
-
-    const classText = new Text(`[${classLevel}]`, classStyle);
-    classText.anchor.set(0.5, 0);
-    classText.position.set(0, 68);
-    scoreContainer.addChild(classText);
-
-    this.container.addChild(scoreContainer);
-  }
-
-  private drawScoreRow(x: number, y: number, label: string, score: number, feedback: string, maxWidth: number, numeral: string): void {
-    // Row background
-    const bg = new Graphics();
-    bg.beginFill(this.colors.bgDark, 0.5);
-    bg.drawRect(x, y, maxWidth, 60);
-    bg.endFill();
-
-    // Left border accent
-    bg.beginFill(this.getScoreColor(score), 0.8);
-    bg.drawRect(x, y, 3, 60);
-    bg.endFill();
-
-    this.container.addChild(bg);
-
-    // Roman numeral
-    const numeralStyle = new TextStyle({
-      fontFamily: 'Times New Roman, serif',
-      fontSize: 12,
-      fill: this.colors.gold,
-      fontStyle: 'italic',
-    });
-
-    const numeralText = new Text(numeral, numeralStyle);
-    numeralText.position.set(x + 10, y + 5);
-    this.container.addChild(numeralText);
-
-    // Label
-    const labelStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 11,
-      fontWeight: 'bold',
-      fill: this.colors.white,
-      letterSpacing: 1,
-    });
-
-    const labelText = new Text(label, labelStyle);
-    labelText.position.set(x + 30, y + 5);
-    this.container.addChild(labelText);
-
-    // Score value
-    const scoreStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 20,
-      fontWeight: 'bold',
-      fill: this.getScoreColor(score),
-    });
-
-    const scoreText = new Text(Math.round(score).toString(), scoreStyle);
-    scoreText.anchor.set(1, 0);
-    scoreText.position.set(x + maxWidth - 10, y + 2);
-    this.container.addChild(scoreText);
-
-    // Progress bar background
-    const barBg = new Graphics();
-    barBg.beginFill(0x1a1a1a);
-    barBg.drawRect(x + 10, y + 25, maxWidth - 60, 6);
-    barBg.endFill();
-    this.container.addChild(barBg);
-
-    // Progress bar fill with gradient effect
-    const barFill = new Graphics();
-    const fillWidth = (maxWidth - 60) * (score / 100);
-    barFill.beginFill(this.getScoreColor(score), 0.8);
-    barFill.drawRect(x + 10, y + 25, fillWidth, 6);
-    barFill.endFill();
-
-    // Tick marks on bar
-    barFill.lineStyle(1, this.colors.bgDark, 0.5);
-    for (let i = 25; i < 100; i += 25) {
-      const tickX = x + 10 + (maxWidth - 60) * (i / 100);
-      barFill.moveTo(tickX, y + 25);
-      barFill.lineTo(tickX, y + 31);
-    }
-    this.container.addChild(barFill);
-
-    // Feedback text
-    const feedbackStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 9,
-      fill: this.colors.gray,
-      wordWrap: true,
-      wordWrapWidth: maxWidth - 20,
-    });
-
-    const feedbackText = new Text(`> ${feedback}`, feedbackStyle);
-    feedbackText.position.set(x + 10, y + 38);
-    this.container.addChild(feedbackText);
-  }
-
-  private drawMetricsPanel(width: number, height: number): void {
-    const panelX = width / 2 + 20;
-    const panelY = 240;
-    const panelWidth = width / 2 - 70;
-    const panelHeight = height - 380;
-
-    // Panel background
-    const panel = new Graphics();
-    panel.beginFill(this.colors.bgPanel, 0.7);
-    panel.lineStyle(1, this.colors.gold, 0.3);
-    panel.drawRect(panelX, panelY, panelWidth, panelHeight);
-    panel.endFill();
-
-    this.drawCornerBrackets(panel, panelX, panelY, panelWidth, panelHeight);
-    this.container.addChild(panel);
-
-    // Section header
-    const headerStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 14,
-      fontWeight: 'bold',
-      fill: this.colors.gold,
-      letterSpacing: 3,
-    });
-
-    const header = new Text('▶ OPERATIONAL TELEMETRY', headerStyle);
-    header.position.set(panelX + 15, panelY + 15);
-    this.container.addChild(header);
-
-    let yPos = panelY + 50;
-
-    // Chapter 1 metrics
-    const ch1 = this.state.chapterMetrics.find(m => m.chapterId === 'chapter1');
-    if (ch1) {
-      yPos = this.drawChapterMetrics(panelX + 15, yPos, 'PHASE I: SWARM ORCHESTRATION', panelWidth - 30, [
-        ['ENGAGEMENTS', ch1.data.totalEngagements?.toString() || '0'],
-        ['AVG SUSPICION INDEX', (ch1.data.avgSuspicion || 0).toFixed(3)],
-        ['TOTAL REACH', (ch1.data.totalReach || 0).toLocaleString()],
-        ['ASSETS COMPROMISED', ch1.data.bannedAccounts?.toString() || '0'],
-        ['ASSETS FLAGGED', ch1.data.flaggedAccounts?.toString() || '0'],
-      ]);
-    }
-
-    // Chapter 2 metrics
-    const ch2 = this.state.chapterMetrics.find(m => m.chapterId === 'chapter2');
-    if (ch2) {
-      yPos = this.drawChapterMetrics(panelX + 15, yPos + 15, 'PHASE II: ASSET TRIAGE', panelWidth - 30, [
-        ['ACCOUNTS PROCESSED', ch2.data.accountsProcessed?.toString() || '0'],
-        ['RETAINED', ch2.data.kept?.toString() || '0'],
-        ['PARKED', ch2.data.parked?.toString() || '0'],
-        ['TERMINATED', ch2.data.discarded?.toString() || '0'],
-        ['FLAGS IDENTIFIED', ch2.data.flagsDetected?.toString() || '0'],
-      ]);
-    }
-
-    // Chapter 3 metrics
-    const ch3 = this.state.chapterMetrics.find(m => m.chapterId === 'chapter3');
-    if (ch3) {
-      this.drawChapterMetrics(panelX + 15, yPos + 15, 'PHASE III: COUNTERMEASURES', panelWidth - 30, [
-        ['TOTAL ENGAGEMENTS', ch3.data.totalEngagements?.toString() || '0'],
-        ['BASELINE SUSPICION', (ch3.data.baselineSuspicion || 0).toFixed(3)],
-        ['POST-CHANGE SUSPICION', (ch3.data.postChangeSuspicion || 0).toFixed(3)],
-        ['DELTA', `${(ch3.data.suspicionChange || 0) >= 0 ? '+' : ''}${(ch3.data.suspicionChange || 0).toFixed(2)}%`],
-      ]);
-    }
-
-    // Redacted section at bottom for effect
-    this.drawRedactedSection(panelX + 15, panelY + panelHeight - 60, panelWidth - 30);
-  }
-
-  private drawChapterMetrics(x: number, y: number, title: string, width: number, data: [string, string][]): number {
-    // Chapter header
-    const titleStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 11,
-      fontWeight: 'bold',
-      fill: this.colors.amber,
-      letterSpacing: 1,
-    });
-
-    const titleText = new Text(`◇ ${title}`, titleStyle);
-    titleText.position.set(x, y);
-    this.container.addChild(titleText);
-
-    // Underline
-    const line = new Graphics();
-    line.lineStyle(1, this.colors.amber, 0.3);
-    line.moveTo(x, y + 18);
-    line.lineTo(x + width, y + 18);
-    this.container.addChild(line);
-
-    // Data rows
-    const labelStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 10,
-      fill: this.colors.grayLight,
-    });
-
-    const valueStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 10,
-      fill: this.colors.green,
-    });
-
-    let currentY = y + 25;
-    data.forEach(([label, value]) => {
-      const labelText = new Text(label, labelStyle);
-      labelText.position.set(x + 10, currentY);
-      this.container.addChild(labelText);
-
-      const valueText = new Text(value, valueStyle);
-      valueText.anchor.set(1, 0);
-      valueText.position.set(x + width - 10, currentY);
-      this.container.addChild(valueText);
-
-      // Dotted line between label and value
-      const dots = new Graphics();
-      dots.lineStyle(1, this.colors.gray, 0.2);
-      const dotsStart = x + 10 + labelText.width + 5;
-      const dotsEnd = x + width - 10 - valueText.width - 5;
-      for (let dx = dotsStart; dx < dotsEnd; dx += 6) {
-        dots.moveTo(dx, currentY + 6);
-        dots.lineTo(dx + 2, currentY + 6);
-      }
-      this.container.addChild(dots);
-
-      currentY += 18;
-    });
-
-    return currentY;
-  }
-
-  private drawRedactedSection(x: number, y: number, width: number): void {
-    const redactedStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 10,
-      fill: this.colors.gray,
-    });
-
-    const label = new Text('ADDITIONAL NOTES:', redactedStyle);
-    label.position.set(x, y);
-    this.container.addChild(label);
-
-    // Redacted bars
-    const bars = new Graphics();
-    bars.beginFill(0x222222);
-    bars.drawRect(x, y + 18, width * 0.7, 10);
-    bars.drawRect(x, y + 32, width * 0.5, 10);
-    bars.endFill();
-    this.container.addChild(bars);
-
-    const redactedText = new Text('[REDACTED]', new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 8,
-      fill: this.colors.redDark,
-      letterSpacing: 2,
-    }));
-    redactedText.position.set(x + 5, y + 20);
-    this.container.addChild(redactedText);
-  }
-
-  private drawCornerBrackets(g: Graphics, x: number, y: number, w: number, h: number): void {
-    const bracketSize = 15;
-    g.lineStyle(2, this.colors.gold, 0.6);
-
-    // Top-left
-    g.moveTo(x, y + bracketSize);
-    g.lineTo(x, y);
-    g.lineTo(x + bracketSize, y);
-
-    // Top-right
-    g.moveTo(x + w - bracketSize, y);
-    g.lineTo(x + w, y);
-    g.lineTo(x + w, y + bracketSize);
-
-    // Bottom-left
-    g.moveTo(x, y + h - bracketSize);
-    g.lineTo(x, y + h);
-    g.lineTo(x + bracketSize, y + h);
-
-    // Bottom-right
-    g.moveTo(x + w - bracketSize, y + h);
-    g.lineTo(x + w, y + h);
-    g.lineTo(x + w, y + h - bracketSize);
   }
 
   private drawClassificationFooter(width: number, height: number): void {
@@ -766,127 +420,6 @@ export class SummaryScene implements IScene {
     this.container.addChild(rightText);
   }
 
-  private drawActionButtons(width: number, height: number): void {
-    const buttonY = height - 80;
-
-    // Export button
-    const exportBtn = this.createStyledButton('◀ EXPORT DOSSIER ▶', this.colors.gold, 200, 35);
-    exportBtn.position.set(width / 2 - 220, buttonY);
-    exportBtn.on('pointerdown', () => this.exportRun());
-    this.container.addChild(exportBtn);
-
-    // Restart button
-    const restartBtn = this.createStyledButton('◀ REINITIALIZE ▶', this.colors.amber, 200, 35);
-    restartBtn.position.set(width / 2 + 20, buttonY);
-    restartBtn.on('pointerdown', () => {
-      this.state.reset();
-      this.state.switchScene('intro');
-    });
-    this.container.addChild(restartBtn);
-
-    // Keyboard hints
-    const hintStyle = new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 9,
-      fill: this.colors.gray,
-      letterSpacing: 1,
-    });
-
-    const hint = new Text('[E] EXPORT  ·  [R] RESTART', hintStyle);
-    hint.anchor.set(0.5, 0);
-    hint.position.set(width / 2, buttonY + 42);
-    this.container.addChild(hint);
-  }
-
-  private createStyledButton(label: string, color: number, width: number, height: number): Container {
-    const btn = new Container();
-    btn.eventMode = 'static';
-    btn.cursor = 'pointer';
-
-    const bg = new Graphics();
-    bg.beginFill(0x0a0a0a, 0.9);
-    bg.lineStyle(1, color, 0.8);
-    bg.drawRect(0, 0, width, height);
-    bg.endFill();
-
-    // Corner accents
-    bg.lineStyle(2, color, 1);
-    const cornerSize = 8;
-    // Top-left
-    bg.moveTo(0, cornerSize);
-    bg.lineTo(0, 0);
-    bg.lineTo(cornerSize, 0);
-    // Top-right
-    bg.moveTo(width - cornerSize, 0);
-    bg.lineTo(width, 0);
-    bg.lineTo(width, cornerSize);
-    // Bottom-left
-    bg.moveTo(0, height - cornerSize);
-    bg.lineTo(0, height);
-    bg.lineTo(cornerSize, height);
-    // Bottom-right
-    bg.moveTo(width - cornerSize, height);
-    bg.lineTo(width, height);
-    bg.lineTo(width, height - cornerSize);
-
-    btn.addChild(bg);
-
-    const text = new Text(label, new TextStyle({
-      fontFamily: 'Courier New, monospace',
-      fontSize: 11,
-      fontWeight: 'bold',
-      fill: color,
-      letterSpacing: 2,
-    }));
-    text.anchor.set(0.5);
-    text.position.set(width / 2, height / 2);
-    btn.addChild(text);
-
-    btn.on('pointerover', () => {
-      bg.clear();
-      bg.beginFill(color, 0.2);
-      bg.lineStyle(1, color, 1);
-      bg.drawRect(0, 0, width, height);
-      bg.endFill();
-      bg.lineStyle(2, color, 1);
-      bg.moveTo(0, cornerSize);
-      bg.lineTo(0, 0);
-      bg.lineTo(cornerSize, 0);
-      bg.moveTo(width - cornerSize, 0);
-      bg.lineTo(width, 0);
-      bg.lineTo(width, cornerSize);
-      bg.moveTo(0, height - cornerSize);
-      bg.lineTo(0, height);
-      bg.lineTo(cornerSize, height);
-      bg.moveTo(width - cornerSize, height);
-      bg.lineTo(width, height);
-      bg.lineTo(width, height - cornerSize);
-    });
-
-    btn.on('pointerout', () => {
-      bg.clear();
-      bg.beginFill(0x0a0a0a, 0.9);
-      bg.lineStyle(1, color, 0.8);
-      bg.drawRect(0, 0, width, height);
-      bg.endFill();
-      bg.lineStyle(2, color, 1);
-      bg.moveTo(0, cornerSize);
-      bg.lineTo(0, 0);
-      bg.lineTo(cornerSize, 0);
-      bg.moveTo(width - cornerSize, 0);
-      bg.lineTo(width, 0);
-      bg.lineTo(width, cornerSize);
-      bg.moveTo(0, height - cornerSize);
-      bg.lineTo(0, height);
-      bg.lineTo(cornerSize, height);
-      bg.moveTo(width - cornerSize, height);
-      bg.lineTo(width, height);
-      bg.lineTo(width, height - cornerSize);
-    });
-
-    return btn;
-  }
-
   private drawScanlines(width: number, height: number): void {
     this.scanlineGraphics = new Graphics();
     this.scanlineGraphics.alpha = 0.03;
@@ -900,33 +433,6 @@ export class SummaryScene implements IScene {
     this.container.addChild(this.scanlineGraphics);
   }
 
-  private getScoreColor(score: number): number {
-    if (score >= 80) return this.colors.green;
-    if (score >= 60) return this.colors.amber;
-    if (score >= 40) return this.colors.gold;
-    return this.colors.red;
-  }
-
-  private exportRun(): void {
-    const gameRun = this.state.exportGameRun();
-    gameRun.derivedScores = this.state.derivedScores;
-    gameRun.chapterMetrics = this.state.chapterMetrics;
-    
-    const json = JSON.stringify(gameRun, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `CLASSIFIED-OBK-${this.state.runId}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    console.log('[Operation Black Knights] Classified dossier exported');
-  }
-
   public update(deltaMs: number): void {
     // Subtle animation for scanlines
     this.animationFrame += deltaMs;
@@ -935,19 +441,7 @@ export class SummaryScene implements IScene {
     }
   }
 
-  private handleKeyDown = (event: KeyboardEvent): void => {
-    if (event.code === 'KeyE') {
-      event.preventDefault();
-      this.exportRun();
-    } else if (event.code === 'KeyR') {
-      event.preventDefault();
-      this.state.reset();
-      this.state.switchScene('intro');
-    }
-  };
-
   public destroy(): void {
-    window.removeEventListener('keydown', this.handleKeyDown);
     this.container.destroy({ children: true });
   }
 }

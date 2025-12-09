@@ -785,7 +785,6 @@ export class Chapter2Scene implements IScene {
     else if (event.code === 'KeyP') this.makeDecision('park');
     else if (event.code === 'KeyD') this.makeDecision('discard');
     else if (event.code === 'Space') { event.preventDefault(); Sound.playSkip(); skipAccount(); this.loadCurrentAccount(); }
-    else if (event.code === 'KeyN') this.state.advanceToNextScene();
   };
 
   public destroy(): void {
